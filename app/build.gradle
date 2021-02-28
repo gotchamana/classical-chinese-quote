@@ -34,12 +34,16 @@ shadowJar {
 }
 
 jpackage {
+    doFirst {
+        delete "$buildDir/dist"
+    }
+
+    dependsOn shadowJar
     type = 'app-image'
     appName = 'ccq'
+    appVersion = '1.0.0'
     input = "$buildDir/libs"
     mainJar = 'ccq.jar'
     mainClass = 'io.github.MainKt'
     destination = "$buildDir/dist"
 }
-
-tasks.jpackage.dependsOn(shadowJar)

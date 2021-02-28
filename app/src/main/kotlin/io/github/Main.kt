@@ -11,11 +11,11 @@ import javax.sql.DataSource
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 
 import org.apache.commons.lang3.SystemUtils.*
-import org.h2.jdbcx.JdbcDataSource
+import org.h2.jdbcx.*
 
 import io.github.config.Configuration
 import io.github.entity.*
-import io.github.repository.BookRepositoryImpl
+import io.github.repository.*
 import io.github.service.*
 
 const val APP_NAME = "ccq"
@@ -41,15 +41,18 @@ fun main(args: Array<String>) {
     }
 
     val config = Configuration.readFromJson(readConfigFile())
+    val dataSource = getDataSource(config)
+    val bookRepository = BookRepositoryImpl(dataSource)
+    val quoteService = QuoteServiceImpl(bookRepository)
 
     if (options.update) {
-        CompletableFuture.runAsync { updateDatabase(config) }
+        CompletableFuture.runAsync { updateDatabase(config, bookRepository) }
             .exceptionally { it.printStackTrace().run { null } }
             .also(::showProgressAnimation)
         return
     }
 
-    getQuote(config, options.title, options.wordCount).let { 
+    getQuote(quoteService, options.title, options.wordCount).let { 
         if (it == null) "查無句子"
         else formatQuote(it)
     }.also(::println)
@@ -107,8 +110,7 @@ private fun readConfigFile(): String {
     return getClasspathResource(CONFIG_FILE_NAME).readText()
 }
 
-private fun updateDatabase(config: Configuration) {
-    val bookRepository = BookRepositoryImpl(getDataSource(config))
+private fun updateDatabase(config: Configuration, bookRepository: BookRepository) {
     bookRepository.deleteAll()
     downloadBooks(config).forEach(bookRepository::save)
 }
@@ -140,18 +142,14 @@ private fun showProgressAnimation(job: CompletableFuture<Void>) {
 private fun getClasspathResource(file: String) = object {}.javaClass.classLoader.getResource(file)
 
 private fun getDataSource(config: Configuration) =
-    JdbcDataSource().apply {
-        setURL("${config.database.url};INIT=RUNSCRIPT FROM 'classpath:schema.sql'")
-        user = config.database.user
-        password = config.database.password
-    }
+    JdbcConnectionPool.create("${config.database.url};INIT=RUNSCRIPT FROM 'classpath:schema.sql'",
+        config.database.user, config.database.password).apply { maxConnections = 1 }
 
-private fun getQuote(config: Configuration, title: String?, wordCount: Int?): Triple<String, String, String>? {
-    val bookRepository = BookRepositoryImpl(getDataSource(config))
-    val quoteService = QuoteServiceImpl(bookRepository)
-    return if (wordCount == null) quoteService.findRandomQuote(title)
-        else quoteService.findRandomQuote(title, wordCount)
-}
+private fun getQuote(quoteService: QuoteService, title: String?, wordCount: Int?) =
+    if (wordCount == null)
+        quoteService.findRandomQuote(title)
+    else
+        quoteService.findRandomQuote(title, wordCount)
 
 private fun formatQuote(quote: Triple<String, String, String>): String {
     val (bookTitle, sectionTitle, text) = quote
