@@ -38,6 +38,10 @@ jpackage {
         delete "$buildDir/dist"
     }
 
+    windows {
+        icon = "$buildDir/resources/main/icon.ico"
+    }
+
     dependsOn shadowJar
     type = 'app-image'
     appName = 'ccq'
